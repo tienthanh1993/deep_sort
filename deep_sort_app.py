@@ -122,7 +122,7 @@ def create_detections(detection_mat, frame_idx, min_height=0):
         bbox, confidence, feature = row[2:6], row[6], row[10:]
         if bbox[3] < min_height:
             continue
-        detection_list.append(Detection(bbox, confidence, feature))
+        detection_list.append(Detection(bbox, confidence, "", feature))
     return detection_list
 
 
@@ -173,9 +173,10 @@ def run(sequence_dir, detection_file, output_file, min_confidence,
 
         # Run non-maxima suppression.
         boxes = np.array([d.tlwh for d in detections])
+        classes = np.array([d.class_name for d in detections])
         scores = np.array([d.confidence for d in detections])
         indices = preprocessing.non_max_suppression(
-            boxes, nms_max_overlap, scores)
+            boxes, classes, nms_max_overlap, scores)
         detections = [detections[i] for i in indices]
 
         # Update tracker.

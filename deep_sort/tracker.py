@@ -1,10 +1,16 @@
 # vim: expandtab:ts=4:sw=4
 from __future__ import absolute_import
+
+import asyncio
+
+import cv2
+import numpy
 import numpy as np
 from . import kalman_filter
 from . import linear_assignment
 from . import iou_matching
-from .track import Track
+from .nn_matching import _nn_cosine_distance, _cosine_distance
+from .track import Track, TrackState
 
 
 class Tracker:
@@ -26,6 +32,11 @@ class Tracker:
     ----------
     metric : nn_matching.NearestNeighborDistanceMetric
         The distance metric used for measurement to track association.
+
+    on_track_add : object
+        callback when detect new track
+    on_track_feature_add : object
+        callback when detect new track
     max_age : int
         Maximum number of missed misses before a track is deleted.
     n_init : int
@@ -35,9 +46,11 @@ class Tracker:
     tracks : List[Track]
         The list of active tracks at the current time step.
 
+
     """
 
-    def __init__(self, metric, max_iou_distance=0.7, max_age=30, n_init=3):
+    def __init__(self, metric, on_track_add=None, on_track_feature_add=None, max_iou_distance=0.7, max_age=60,
+                 n_init=3):
         self.metric = metric
         self.max_iou_distance = max_iou_distance
         self.max_age = max_age
@@ -46,6 +59,8 @@ class Tracker:
         self.kf = kalman_filter.KalmanFilter()
         self.tracks = []
         self._next_id = 1
+        self.on_track_add = on_track_add
+        self.on_track_feature_add = on_track_feature_add
 
     def predict(self):
         """Propagate track state distributions one time step forward.
@@ -55,13 +70,19 @@ class Tracker:
         for track in self.tracks:
             track.predict(self.kf)
 
-    def update(self, detections):
+    def update(self, detections, video = "", frame_id=0, frame=None):
         """Perform measurement update and track management.
 
         Parameters
         ----------
         detections : List[deep_sort.detection.Detection]
             A list of detections at the current time step.
+        video : str
+            current video path
+        frame_id : int
+            current frame id
+        frame : bytearray
+            current frame image
 
         """
         # Run matching cascade.
@@ -70,12 +91,32 @@ class Tracker:
 
         # Update track set.
         for track_idx, detection_idx in matches:
-            self.tracks[track_idx].update(
-                self.kf, detections[detection_idx])
+            self.tracks[track_idx].update(self.kf, detections[detection_idx])
+            if self.on_track_feature_add is not None:
+                if self.tracks[track_idx].state == TrackState.Confirmed:
+                    if frame_id % 30 == 0:
+                        bbox = detections[detection_idx].to_tlbr()
+                        crop_img = frame[int(bbox[1]):int(bbox[3]), int(bbox[0]):int(bbox[2])]
+                        self.on_track_feature_add(video, frame_id, crop_img.copy(),
+                                                  bbox,
+                                                  self.tracks[track_idx].track_id,
+                                                  self.tracks[track_idx].features[-1],
+                                                  detections[detection_idx].confidence)
+                else:
+                    bbox = detections[detection_idx].to_tlbr()
+                    crop_img = frame[int(bbox[1]):int(bbox[3]), int(bbox[0]):int(bbox[2])]
+                    self.on_track_feature_add(video, frame_id, crop_img.copy(),
+                                              bbox,
+                                              self.tracks[track_idx].track_id,
+                                              self.tracks[track_idx].features[-1],
+                                              detections[detection_idx].confidence)
+
         for track_idx in unmatched_tracks:
             self.tracks[track_idx].mark_missed()
         for detection_idx in unmatched_detections:
             self._initiate_track(detections[detection_idx])
+            if self.on_track_add is not None:
+                self.on_track_add(video, frame_id, frame, self.tracks[- 1].track_id, self.tracks[- 1].class_name)
         self.tracks = [t for t in self.tracks if not t.is_deleted()]
 
         # Update distance metric.
@@ -132,7 +173,8 @@ class Tracker:
 
     def _initiate_track(self, detection):
         mean, covariance = self.kf.initiate(detection.to_xyah())
+        class_name = detection.get_class()
         self.tracks.append(Track(
             mean, covariance, self._next_id, self.n_init, self.max_age,
-            detection.feature))
+            detection.feature, class_name, detection))
         self._next_id += 1
