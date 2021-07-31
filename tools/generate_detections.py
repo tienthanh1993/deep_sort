@@ -168,7 +168,8 @@ def generate_detections(encoder, mot_dir, output_dir, detection_dir=None):
         min_frame_idx = frame_indices.astype(np.int).min()
         max_frame_idx = frame_indices.astype(np.int).max()
         for frame_idx in range(min_frame_idx, max_frame_idx + 1):
-            print("Frame %05d/%05d" % (frame_idx, max_frame_idx))
+            if frame_idx % 200 == 0 or min_frame_idx == max_frame_idx:
+                print("Frame %05d/%05d" % (frame_idx, max_frame_idx))
             mask = frame_indices == frame_idx
             rows = detections_in[mask]
 
