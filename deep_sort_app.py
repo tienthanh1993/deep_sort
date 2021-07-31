@@ -164,7 +164,8 @@ def run(sequence_dir, detection_file, output_file, min_confidence,
     results = []
 
     def frame_callback(vis, frame_idx):
-        print("Processing frame %05d" % frame_idx)
+        if frame_idx % 200 ==0:
+            print("Processing frame %05d" % frame_idx)
 
         # Load image and generate detections.
         detections = create_detections(
