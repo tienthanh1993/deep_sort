@@ -90,7 +90,7 @@ class Tracker:
             self.tracks[track_idx].update(self.kf, detections[detection_idx])
             if self.on_track_feature_add is not None:
                 #  confirmed feature
-                if self.tracks[track_idx].hits % self.n_init == 0:
+                if self.tracks[track_idx].hits % (self.n_init * 3) == 0:
                     bbox = detections[detection_idx].to_tlbr()
                     crop_img = frame[int(bbox[1]):int(bbox[3]), int(bbox[0]):int(bbox[2])]
                     self.on_track_feature_add(video, frame_id, crop_img.copy(),
