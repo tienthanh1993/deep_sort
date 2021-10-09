@@ -1,16 +1,12 @@
 # vim: expandtab:ts=4:sw=4
 from __future__ import absolute_import
 
-import asyncio
-
-import cv2
-import numpy
 import numpy as np
+
+from . import iou_matching
 from . import kalman_filter
 from . import linear_assignment
-from . import iou_matching
-from .nn_matching import _nn_cosine_distance, _cosine_distance
-from .track import Track, TrackState
+from .track import Track
 
 
 class Tracker:
@@ -70,7 +66,7 @@ class Tracker:
         for track in self.tracks:
             track.predict(self.kf)
 
-    def update(self, detections, video = "", frame_id=0, frame=None):
+    def update(self, detections, video="", frame_id=0, frame=None):
         """Perform measurement update and track management.
 
         Parameters
@@ -93,16 +89,8 @@ class Tracker:
         for track_idx, detection_idx in matches:
             self.tracks[track_idx].update(self.kf, detections[detection_idx])
             if self.on_track_feature_add is not None:
-                if self.tracks[track_idx].state == TrackState.Confirmed:
-                    if frame_id % 30 == 0:
-                        bbox = detections[detection_idx].to_tlbr()
-                        crop_img = frame[int(bbox[1]):int(bbox[3]), int(bbox[0]):int(bbox[2])]
-                        self.on_track_feature_add(video, frame_id, crop_img.copy(),
-                                                  bbox,
-                                                  self.tracks[track_idx].track_id,
-                                                  self.tracks[track_idx].features[-1],
-                                                  detections[detection_idx].confidence)
-                else:
+                #  confirmed feature
+                if self.tracks[track_idx].hits % self.n_init == 0:
                     bbox = detections[detection_idx].to_tlbr()
                     crop_img = frame[int(bbox[1]):int(bbox[3]), int(bbox[0]):int(bbox[2])]
                     self.on_track_feature_add(video, frame_id, crop_img.copy(),
