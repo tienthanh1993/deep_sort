@@ -1,12 +1,35 @@
 # vim: expandtab:ts=4:sw=4
 from __future__ import absolute_import
 
+import math
 import numpy as np
+from scipy import spatial
 
 from . import iou_matching
 from . import kalman_filter
 from . import linear_assignment
 from .track import Track
+
+
+def calculate_cosine_distance(a, b):
+    cosine_distance = float(spatial.distance.cosine(a, b))
+    return cosine_distance
+
+
+def calculate_cosine_similarity(a, b):
+    cosine_similarity = 1 - calculate_cosine_distance(a, b)
+    return cosine_similarity
+
+
+def calculate_angular_distance(a, b):
+    cosine_similarity = calculate_cosine_similarity(a, b)
+    angular_distance = math.acos(cosine_similarity) / math.pi
+    return angular_distance
+
+
+def calculate_angular_similarity(a, b):
+    angular_similarity = 1 - calculate_angular_distance(a, b)
+    return angular_similarity
 
 
 class Tracker:
@@ -66,6 +89,15 @@ class Tracker:
         for track in self.tracks:
             track.predict(self.kf)
 
+    def cosine_similarity(self, a, b):
+        """
+
+        :param b:
+        :return:
+        """
+        return sum([i * j for i, j in zip(a, b)]) / (
+                math.sqrt(sum([i * i for i in a])) * math.sqrt(sum([i * i for i in b])))
+
     def update(self, detections, video="", frame_id=0, frame=None):
         """Perform measurement update and track management.
 
@@ -102,9 +134,24 @@ class Tracker:
         for track_idx in unmatched_tracks:
             self.tracks[track_idx].mark_missed()
         for detection_idx in unmatched_detections:
+            # for track in self.tracks:
+            #     print("newid %d track_id=%d feature distance %f " % (
+            #         self._next_id, track.track_id, calculate_cosine_similarity(track.last_detection.feature,
+            #                                                                  detections[detection_idx].feature)))
+
             self._initiate_track(detections[detection_idx])
             if self.on_track_add is not None:
                 self.on_track_add(video, frame_id, frame, self.tracks[- 1].track_id, self.tracks[- 1].class_name)
+
+            if self.on_track_feature_add is not None:  # first seen feature
+                bbox = detections[detection_idx].to_tlbr()
+                crop_img = frame[int(bbox[1]):int(bbox[3]), int(bbox[0]):int(bbox[2])]
+                self.on_track_feature_add(video, frame_id, crop_img.copy(),
+                                          bbox,
+                                          self.tracks[- 1].track_id,
+                                          detections[detection_idx].feature,
+                                          detections[detection_idx].confidence)
+
         self.tracks = [t for t in self.tracks if not t.is_deleted()]
 
         # Update distance metric.
@@ -128,7 +175,6 @@ class Tracker:
             cost_matrix = linear_assignment.gate_cost_matrix(
                 self.kf, cost_matrix, tracks, dets, track_indices,
                 detection_indices)
-
             return cost_matrix
 
         # Split track set into confirmed and unconfirmed tracks.
